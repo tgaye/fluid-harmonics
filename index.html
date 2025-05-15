@@ -1,0 +1,254 @@
+<!DOCTYPE html><html lang="en"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluid Harmonics</title>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.8.0/lib/p5.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #121212;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(30, 30, 30, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-family: 'Courier New', monospace;
+            max-width: 250px;
+            z-index: 100;
+        }
+        #toggle-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 8px 15px;
+            background: rgba(30, 30, 30, 0.8);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 100;
+            font-family: 'Courier New', monospace;
+        }
+        .slider-container {
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+    </style>
+
+<base target="_self">
+</head>
+<body>
+    <div id="controls">
+        <h3 style="margin-top: 0;">Fluid Harmonics</h3>
+        <div class="slider-container">
+            <label for="particleCount">Particle Count</label>
+            <input type="range" id="particleCount" min="100" max="2000" value="800">
+        </div>
+        <div class="slider-container">
+            <label for="flowIntensity">Flow Intensity</label>
+            <input type="range" id="flowIntensity" min="0.1" max="2" step="0.1" value="1">
+        </div>
+        <div class="slider-container">
+            <label for="colorSpeed">Color Speed</label>
+            <input type="range" id="colorSpeed" min="0.01" max="0.1" step="0.01" value="0.05">
+        </div>
+        <div class="slider-container">
+            <label for="mouseInfluence">Mouse Influence</label>
+            <input type="range" id="mouseInfluence" min="0" max="2" step="0.1" value="1">
+        </div>
+    </div>
+    <button id="toggle-controls">Hide Controls</button>
+
+    <script>
+        const sketch = (p) => {
+            let particles = [];
+            const maxParticles = 2000;
+            let flowField = [];
+            let cols, rows;
+            let resolution = 20;
+            let zoff = 0;
+            let hueOffset = 0;
+            let controlsVisible = true;
+            
+            p.setup = () => {
+                p.createCanvas(p.windowWidth, p.windowHeight);
+                p.colorMode(p.HSB, 360, 100, 100, 1);
+                
+                cols = Math.floor(p.width / resolution);
+                rows = Math.floor(p.height / resolution);
+                flowField = new Array(cols * rows);
+                
+                initializeParticles(800);
+                
+                // Load control panel state from localStorage
+                const savedState = localStorage.getItem('controlsVisible');
+                if (savedState !== null) {
+                    controlsVisible = savedState === 'true';
+                    document.getElementById('controls').style.display = controlsVisible ? 'block' : 'none';
+                    document.getElementById('toggle-controls').textContent = controlsVisible ? 'Hide Controls' : 'Show Controls';
+                }
+                
+                // Set up event listeners for controls
+                document.getElementById('particleCount').addEventListener('input', (e) => {
+                    const count = parseInt(e.target.value);
+                    initializeParticles(count);
+                });
+                
+                document.getElementById('toggle-controls').addEventListener('click', () => {
+                    controlsVisible = !controlsVisible;
+                    document.getElementById('controls').style.display = controlsVisible ? 'block' : 'none';
+                    document.getElementById('toggle-controls').textContent = controlsVisible ? 'Hide Controls' : 'Show Controls';
+                    localStorage.setItem('controlsVisible', controlsVisible);
+                });
+            };
+            
+            p.windowResized = () => {
+                p.resizeCanvas(p.windowWidth, p.windowHeight);
+                cols = Math.floor(p.width / resolution);
+                rows = Math.floor(p.height / resolution);
+                flowField = new Array(cols * rows);
+            };
+            
+            function initializeParticles(count) {
+                particles = [];
+                const safeCount = p.constrain(count, 100, maxParticles);
+                for (let i = 0; i < safeCount; i++) {
+                    particles.push(new Particle());
+                }
+            }
+            
+            class Particle {
+                constructor() {
+                    this.pos = p.createVector(p.random(p.width), p.random(p.height));
+                    this.vel = p.createVector(0, 0);
+                    this.acc = p.createVector(0, 0);
+                    this.maxSpeed = 2;
+                    this.prevPos = this.pos.copy();
+                    this.life = p.random(100, 200);
+                    this.age = 0;
+                    this.hue = p.random(360);
+                }
+                
+                update() {
+                    this.vel.add(this.acc);
+                    this.vel.limit(this.maxSpeed);
+                    this.pos.add(this.vel);
+                    this.acc.mult(0);
+                    this.age++;
+                    
+                    // Reset particle if it's too old or off screen
+                    if (this.age > this.life || 
+                        this.pos.x < 0 || this.pos.x > p.width || 
+                        this.pos.y < 0 || this.pos.y > p.height) {
+                        this.reset();
+                    }
+                }
+                
+                applyForce(force) {
+                    this.acc.add(force);
+                }
+                
+                follow(vectors) {
+                    const x = p.floor(this.pos.x / resolution);
+                    const y = p.floor(this.pos.y / resolution);
+                    const index = x + y * cols;
+                    
+                    if (index >= 0 && index < flowField.length) {
+                        const force = vectors[index];
+                        this.applyForce(force);
+                    }
+                }
+                
+                reset() {
+                    this.pos = p.createVector(p.random(p.width), p.random(p.height));
+                    this.prevPos = this.pos.copy();
+                    this.vel = p.createVector(0, 0);
+                    this.acc = p.createVector(0, 0);
+                    this.age = 0;
+                    this.life = p.random(100, 200);
+                }
+                
+                display() {
+                    const alpha = p.map(this.age, 0, this.life, 100, 0);
+                    p.stroke(this.hue, 80, 80, alpha/100);
+                    p.strokeWeight(1);
+                    p.line(this.pos.x, this.pos.y, this.prevPos.x, this.prevPos.y);
+                    this.updatePrev();
+                }
+                
+                updatePrev() {
+                    this.prevPos.x = this.pos.x;
+                    this.prevPos.y = this.pos.y;
+                }
+            }
+            
+            p.draw = () => {
+                p.background(0, 0, 10, 0.05);
+                
+                // Update flow field
+                const flowIntensity = parseFloat(document.getElementById('flowIntensity').value);
+                let yoff = 0;
+                for (let y = 0; y < rows; y++) {
+                    let xoff = 0;
+                    for (let x = 0; x < cols; x++) {
+                        const index = x + y * cols;
+                        const angle = p.noise(xoff, yoff, zoff) * p.TWO_PI * 4;
+                        const v = p5.Vector.fromAngle(angle);
+                        v.setMag(flowIntensity);
+                        flowField[index] = v;
+                        xoff += 0.1;
+                    }
+                    yoff += 0.1;
+                    zoff += 0.0003 * parseFloat(document.getElementById('colorSpeed').value);
+                }
+                
+                // Update and display particles
+                for (let particle of particles) {
+                    particle.follow(flowField);
+                    
+                    // Apply mouse influence
+                    const mouseInfluence = parseFloat(document.getElementById('mouseInfluence').value);
+                    if (mouseInfluence > 0 && p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height) {
+                        const mousePos = p.createVector(p.mouseX, p.mouseY);
+                        const dir = p5.Vector.sub(mousePos, particle.pos);
+                        const distance = dir.mag();
+                        if (distance < 100) {
+                            dir.setMag(p.map(distance, 0, 100, 2, 0) * mouseInfluence);
+                            particle.applyForce(dir);
+                        }
+                    }
+                    
+                    particle.update();
+                    particle.display();
+                    
+                    // Update particle color based on position and time
+                    particle.hue = (p.map(particle.pos.x, 0, p.width, 0, 360) + hueOffset) % 360;
+                }
+                
+                hueOffset = (hueOffset + parseFloat(document.getElementById('colorSpeed').value)) % 360;
+                
+                // Monitor frame rate and adjust quality if needed
+                if (p.frameRate() < 30 && particles.length > 100) {
+                    particles = particles.slice(0, Math.floor(particles.length * 0.9));
+                    document.getElementById('particleCount').value = particles.length;
+                }
+            };
+        };
+
+        new p5(sketch);
+    </script>
+
+</body></html>
